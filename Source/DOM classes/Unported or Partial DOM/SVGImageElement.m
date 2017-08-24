@@ -78,66 +78,76 @@ CGImageRef SVGImageCGImage(AppleNativeImageRef img)
 	CALayer* newLayer = [CALayerWithClipRender layer];
 	
 	[SVGHelperUtilities configureCALayer:newLayer usingElement:self];
-	
-	NSData *imageData;
-	NSURL* imageURL = [NSURL URLWithString:_href];
-	SVGKSource* effectiveSource = nil;
-	if ([_href hasPrefix:@"http:"] || [_href hasPrefix:@"https:"] )
-		imageData = [NSData dataWithContentsOfURL:imageURL];
-	else
-	if( [_href hasPrefix:@"data:"])
-	{
-		self.href = [_href stringByReplacingOccurrencesOfString:@"\\s+"
-												 withString:@""
-													options:NSRegularExpressionSearch
-													  range:NSMakeRange(0, [_href length]) ];
-		
-		imageData = [NSData dataWithContentsOfURL:[NSURL URLWithString:_href]];
-	}
-	else
-	{
-		effectiveSource = [self.rootOfCurrentDocumentFragment.source sourceFromRelativePath:_href];
-		NSInputStream *stream = effectiveSource.stream;
-		[stream open]; // if we do this, we CANNOT parse from this source again in future
-        NSError *error = nil;
-		imageData = [NSData dataWithContentsOfStream:stream initialCapacity:NSUIntegerMax error:&error];
-		if( error )
-			SVGKitLogError(@"[%@] ERROR: unable to read stream from %@ into NSData: %@", [self class], _href, error);
-	}
-	
-	/** Now we have some raw bytes, try to load using Apple's image loaders
-	 (will fail if the image is an SVG file)
-	 */
-	AppleNativeImageRef image = [AppleNativeImage imageWithData:imageData];
-	
-    if( image == nil ) // NSData doesn't contain an imageformat Apple supports; might be an SVG instead
-    {
-        SVGKImage *svg = nil;
-        
-        if( effectiveSource == nil )
-            effectiveSource = [SVGKSourceURL sourceFromURL:imageURL];
-        
-        if( effectiveSource != nil )
+
+    AppleNativeImageRef image = nil;
+    BOOL imageIsSVG = NO;
+
+#if TARGET_OS_IPHONE
+    image = self.injectedImage;
+#endif
+
+    if (image == nil) {
+        NSData *imageData;
+        NSURL* imageURL = [NSURL URLWithString:_href];
+        SVGKSource* effectiveSource = nil;
+        if ([_href hasPrefix:@"http:"] || [_href hasPrefix:@"https:"] )
+        imageData = [NSData dataWithContentsOfURL:imageURL];
+        else
+        if( [_href hasPrefix:@"data:"])
         {
-            SVGKitLogInfo(@"Attempting to interpret the image at URL as an embedded SVG link (Apple failed to parse it): %@", _href );
-            if( imageData != nil )
+            self.href = [_href stringByReplacingOccurrencesOfString:@"\\s+"
+                                                         withString:@""
+                                                            options:NSRegularExpressionSearch
+                                                              range:NSMakeRange(0, [_href length]) ];
+
+            imageData = [NSData dataWithContentsOfURL:[NSURL URLWithString:_href]];
+        }
+        else
+        {
+            effectiveSource = [self.rootOfCurrentDocumentFragment.source sourceFromRelativePath:_href];
+            NSInputStream *stream = effectiveSource.stream;
+            [stream open]; // if we do this, we CANNOT parse from this source again in future
+            NSError *error = nil;
+            imageData = [NSData dataWithContentsOfStream:stream initialCapacity:NSUIntegerMax error:&error];
+            if( error )
+            SVGKitLogError(@"[%@] ERROR: unable to read stream from %@ into NSData: %@", [self class], _href, error);
+        }
+
+        /** Now we have some raw bytes, try to load using Apple's image loaders
+         (will fail if the image is an SVG file)
+         */
+        image = [AppleNativeImage imageWithData:imageData];
+
+        if( image == nil ) // NSData doesn't contain an imageformat Apple supports; might be an SVG instead
+        {
+            SVGKImage *svg = nil;
+
+            if( effectiveSource == nil )
+            effectiveSource = [SVGKSourceURL sourceFromURL:imageURL];
+
+            if( effectiveSource != nil )
             {
-                /** NB: sources can only be used once; we've already opened the stream for the source
-                 earlier, so we MUST pass-in the already-downloaded NSData
-                 
-                 (if not, we'd be downloading it twice anyway, which can be lethal with large
-                 SVG files!)
-                 */
-                svg = [SVGKImage imageWithSource: [SVGKSourceNSData sourceFromData:imageData URLForRelativeLinks:imageURL]];
-            }
-            else
-            {
-                svg = [SVGKImage imageWithSource: effectiveSource];
-            }
-            
-            if( svg != nil )
-            {
-                image = svg.UIImage;
+                SVGKitLogInfo(@"Attempting to interpret the image at URL as an embedded SVG link (Apple failed to parse it): %@", _href );
+                if( imageData != nil )
+                {
+                    /** NB: sources can only be used once; we've already opened the stream for the source
+                     earlier, so we MUST pass-in the already-downloaded NSData
+
+                     (if not, we'd be downloading it twice anyway, which can be lethal with large
+                     SVG files!)
+                     */
+                    svg = [SVGKImage imageWithSource: [SVGKSourceNSData sourceFromData:imageData URLForRelativeLinks:imageURL]];
+                }
+                else
+                {
+                    svg = [SVGKImage imageWithSource: effectiveSource];
+                }
+                
+                if( svg != nil )
+                {
+                    image = svg.UIImage;
+                    imageIsSVG = YES;
+                }
             }
         }
     }
@@ -146,7 +156,7 @@ CGImageRef SVGImageCGImage(AppleNativeImageRef img)
 	{
         CGRect frame = CGRectMake(_x, _y, _width, _height);
         
-        if( imageData )
+        if( !imageIsSVG )
             self.viewBox = SVGRectMake(0, 0, image.size.width, image.size.height);
         else
             self.viewBox = SVGRectMake(0, 0, _width, _height);

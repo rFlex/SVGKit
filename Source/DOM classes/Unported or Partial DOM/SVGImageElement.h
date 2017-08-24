@@ -1,5 +1,9 @@
 #import <Foundation/Foundation.h>
 
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+#endif
+
 #import "SVGElement.h"
 #import "SVGTransformable.h"
 #import "SVGFitToViewBox.h"
@@ -14,5 +18,9 @@
 @property (nonatomic, readonly) CGFloat height;
 
 @property (nonatomic, strong, readonly) NSString *href;
+
+#if TARGET_OS_IPHONE
+@property (nonatomic, strong) UIImage *injectedImage;
+#endif
 
 @end
